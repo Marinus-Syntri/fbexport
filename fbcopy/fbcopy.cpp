@@ -221,20 +221,20 @@ void FBCopy::dropAllForeignKeys()
     IBPP::Statement st1 = IBPP::StatementFactory(dest, tr1);
     st1->Prepare(
         "SELECT "
-		"'ALTER TABLE ' || TRIM(detail_relation_constraints.rdb$relation_name) || ' DROP CONSTRAINT ' || trim(rdb$ref_constraints.RDB$CONSTRAINT_NAME), "
-		"'ALTER TABLE ' || TRIM(detail_relation_constraints.rdb$relation_name) || ' ADD CONSTRAINT ' || trim(rdb$ref_constraints.RDB$CONSTRAINT_NAME) "
-		"|| ' FOREIGN KEY(' || TRIM(detail_index_segments.rdb$field_name) "
-		"|| ') REFERENCES ' || TRIM(master_relation_constraints.rdb$relation_name) || ' (' || TRIM(master_index_segments.rdb$field_name) || ')' "
-		"|| CASE WHEN TRIM(rdb$ref_constraints.RDB$DELETE_RULE) <> 'RESTRICT' THEN ' ON DELETE ' || TRIM(rdb$ref_constraints.RDB$DELETE_RULE) ELSE '' END "
-		"|| CASE WHEN TRIM(rdb$ref_constraints.RDB$UPDATE_RULE) <> 'RESTRICT' THEN ' ON UPDATE ' || TRIM(rdb$ref_constraints.RDB$UPDATE_RULE) ELSE '' END "
-		"FROM "
-		"rdb$relation_constraints detail_relation_constraints "
-		"JOIN rdb$index_segments detail_index_segments ON detail_relation_constraints.rdb$index_name = detail_index_segments.rdb$index_name "
+		"'ALTER TABLE ' || TRIM(detail_relation_constraints.rdb$relation_name) || ' DROP CONSTRAINT ' || TRIM(rdb$ref_constraints.rdb$constraint_name), "
+		"'ALTER TABLE ' || TRIM(detail_relation_constraints.rdb$relation_name) || ' ADD CONSTRAINT ' || TRIM(rdb$ref_constraints.rdb$constraint_name) "
+		"|| ' FOREIGN KEY(' ||  "
+		"(SELECT LIST(TRIM(rdb$field_name), ', ') FROM rdb$index_segments WHERE rdb$index_name = detail_relation_constraints.rdb$index_name) "
+		"|| ') REFERENCES ' || TRIM(master_relation_constraints.rdb$relation_name) || ' (' ||  "
+		"(SELECT LIST(TRIM(rdb$field_name), ', ') FROM rdb$index_segments WHERE rdb$index_name = master_relation_constraints.rdb$index_name ) "
+		"|| ')'  "
+		"|| CASE WHEN TRIM(rdb$ref_constraints.rdb$delete_rule) <> 'RESTRICT' THEN ' ON DELETE ' || TRIM(rdb$ref_constraints.rdb$delete_rule) ELSE '' END "
+		"|| CASE WHEN TRIM(rdb$ref_constraints.rdb$update_rule) <> 'RESTRICT' THEN ' ON UPDATE ' || TRIM(rdb$ref_constraints.rdb$update_rule) ELSE '' END "
+		"FROM rdb$relation_constraints detail_relation_constraints  "
 		"JOIN rdb$ref_constraints ON detail_relation_constraints.rdb$constraint_name = rdb$ref_constraints.rdb$constraint_name "
 		"JOIN rdb$relation_constraints master_relation_constraints ON rdb$ref_constraints.rdb$const_name_uq = master_relation_constraints.rdb$constraint_name "
-		"JOIN rdb$index_segments master_index_segments ON master_relation_constraints.rdb$index_name = master_index_segments.rdb$index_name "
 		"WHERE "
-		"detail_relation_constraints.rdb$constraint_type = 'FOREIGN KEY'"
+		"detail_relation_constraints.rdb$constraint_type = 'FOREIGN KEY' "		
     );
     st1->Execute();
     while (st1->Fetch())
@@ -907,7 +907,7 @@ void FBCopy::compareData(const std::string& table, const std::string& fields,
     catch (IBPP::Exception& e)
     {
         fprintf(stderr, "\n[CRITICAL ERROR] Comparison aborted for table '%s'.\n", table.c_str());
-        return;
+        throw;
     }
 
     if (ar->Html)
@@ -1357,8 +1357,19 @@ int FBCopy::cmpData(IBPP::Statement& st1, IBPP::Statement& st2, int col)
     if (st2->ColumnScale(col) && (DataType2 == IBPP::sdInteger || DataType2 == IBPP::sdSmallint || DataType2 == IBPP::sdLargeint))
         DataType2 = IBPP::sdDouble;
 
+    bool isNumeric1 = (DataType1 == IBPP::sdSmallint || DataType1 == IBPP::sdInteger || DataType1 == IBPP::sdLargeint || DataType1 == IBPP::sdFloat || DataType1 == IBPP::sdDouble);
+	bool isNumeric2 = (DataType2 == IBPP::sdSmallint || DataType2 == IBPP::sdInteger || DataType2 == IBPP::sdLargeint || DataType2 == IBPP::sdFloat || DataType2 == IBPP::sdDouble);
+
+
     if (DataType1 != DataType2)
     {
+		if (isNumeric1 && isNumeric2)
+		{
+			st1->Get(col, dval);
+			st2->Get(col, dval2);
+			return cmpval(dval, dval2);
+		}
+		
         if (DataType1 == IBPP::sdBlob || DataType2 == IBPP::sdBlob)
         {
             // comparison not possible via Get(), treat as different
