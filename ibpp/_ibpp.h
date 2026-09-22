@@ -1076,7 +1076,7 @@ private:
 	RowImpl* mOutRow;
 	bool mResultSetAvailable;	// Executed and result set is available
 	bool mCursorOpened;			// dsql_set_cursor_name was called
-	IBPP::STT mType;			// Type de requète
+	IBPP::STT mType;			// Type de requête
 	std::string mSql;			// Last SQL statement prepared or executed
 
 	// Internal Methods
